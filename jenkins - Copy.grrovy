@@ -1,0 +1,110 @@
+#!groovy
+def url="null"
+def tagName=""
+ def printParams() {
+  env.getEnvironment().each { name, value -> println "Name: $name -> Value $value" }
+}
+pipeline {
+    agent { label "slave2" }
+    tools {
+        maven 'Maven-3.3.9'
+        jdk 'JAVA_HOME'
+    }
+    options {
+     buildDiscarder(logRotator(numToKeepStr: '3'))
+ }
+    parameters {
+choice(
+        name: 'microservice',
+        choices: "test"
+         )
+         string ( defaultValue: 'test5_dev', description: '', name: 'BRANCH_NAME')
+         string ( defaultValue: '', description: 'Docker build tag:task id_releaseid', name: 'tagID')
+      }
+      stages {
+    stage ('Checkout repo') {
+         steps {
+             script {
+                url = "https://github.com/test/${microservice}.git"
+                sh "echo $url"
+                git branch: 'test_cp5_dev',
+                credentialsId: 'devtools',
+                 url: "$url"
+                sh "ls -lat"
+                }
+         }
+    }
+      }
+ stage ('Maven build') {
+        steps {
+    script {
+    sh 'mvn -f pom.xml clean package -DskipTests -Dfinexp-common-version=0.0.2-FW-SNAPSHOT -Dfinexp-async-version=0.0.2-FW-SNAPSHOT'
+    }
+    }
+    }
+ stage('Sonarqube analysis') {
+    steps {
+//    commonSonarScanner()
+println "step started"
+
+    }
+        }
+stage('Sonarqube qualityGate') {
+    steps {
+ //   sonarQualityGate()
+println "step started"
+    }
+        }
+        stage ('Artifact upload') {
+          steps {
+              script {
+                  sh "mkdir -p pipeline"
+                  dir("pipeline")
+                  {
+                  url = "xxxxxx"
+                  sh "echo $url"
+                  git branch: 'master',
+                  credentialsId: 'devtools',
+                   url: "$url"
+              sh 'sudo git commit ./test-Consumer/dev/$microservice/build -m "${tagName} Image added for $microservice by ${BUILD_USER}"'
+                  }
+              }
+         }
+
+    }
+
+         }
+        stage ("Deployment") {
+              environment {
+                  GIT_AUTH = credentials('test')
+              }
+              steps {
+                  dir("pipeline")
+                  {
+                  sh('''
+                      git config --local credential.helper "!f() { echo username=\\$GIT_AUTH_USR; echo password=\\$GIT_AUTH_PSW; }; f"
+                      git push origin HEAD:master
+                  ''')
+                  }
+              }
+          }
+    stage ('Deployment') {
+        steps {
+            script {
+                sh "cp target/${microservice}-0.0.1-SNAPSHOT.jar src/main/docker/"
+               tagName=tagPushDockerImage("test-r3/"+microservice, "https://test-dev-repo.tavant.com")
+               println "${tagName}"
+            }
+       }
+
+  }
+
+
+}
+post {
+        always {
+            cleanWs()
+        }
+    }
+
+}
